@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Classroom Bingo — Single File</title>
+<style>
+  :root{
+    --bg:#f7f7f8;
+    --card:#ffffff;
+    --muted:#6b6f75;
+    --accent:#1e90ff;
+    --cell-border:#dfe3e6;
+    --max-width:1100px;
+    --gap:12px;
+    --board-gap:8px;
+    --shadow: 0 1px 2px rgba(16,24,40,0.06);
+  }
+
+  /* Layout */
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#fbfdff,#f7f8fa);font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  .wrap{max-width:var(--max-width);margin:28px auto;padding:20px;box-sizing:border-box;}
+  .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:var(--shadow);border:1px solid rgba(16,24,40,0.04);}
+
+  header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  h1{font-size:1.1rem;margin:0;color:#111827}
+  p.lead{margin:0;color:var(--muted);font-size:0.9rem}
+
+  /* Builder area */
+  .controls{display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start}
+  .controls-left{display:flex;flex-direction:column;gap:8px}
+  label{font-size:0.85rem;color:var(--muted)}
+  textarea{width:100%;height:170px;padding:10px;border-radius:8px;border:1px solid var(--cell-border);resize:vertical;font-size:0.95rem;line-height:1.2}
+  .control-row{display:flex;gap:8px;align-items:center;margin-top:6px}
+  .small{font-size:0.85rem;color:var(--muted)}
+
+  .controls-right{display:flex;flex-direction:column;gap:10px;padding:8px}
+  .controls-right > div{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  input[type="color"]{width:48px;height:36px;border:0;background:transparent;padding:0;cursor:pointer}
+  .btn{padding:8px 12px;border-radius:8px;border:1px solid rgba(16,24,40,0.06);background:linear-gradient(180deg,#fff,#fbfdff);cursor:pointer}
+  .btn-primary{background:linear-gradient(180deg,var(--accent),#0066d9);color:white;border:0}
+  .btn-ghost{background:transparent;border:1px dashed var(--cell-border)}
+  .muted{color:var(--muted)}
+
+  /* Board + legend area */
+  .board-and-legend{display:grid;grid-template-columns:1fr 240px;gap:12px;margin-top:14px}
+  .board{background:var(--card);padding:12px;border-radius:10px;border:1px solid var(--cell-border)}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--board-gap);width:100%}
+  /* Cells are buttons acting as checkboxes for ARIA reasons */
+  .cell{
+    position:relative;
+    aspect-ratio:1/1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:8px;
+    border-radius:8px;
+    border:1px solid var(--cell-border);
+    background:linear-gradient(180deg,white,#fcfeff);
+    font-size:0.93rem;
+    line-height:1.08;
+    color:#0f1724;
+    cursor:pointer;
+    transition:transform .08s ease, box-shadow .12s ease;
+    user-select:none;
+    outline:none;
+  }
+  .cell:focus{box-shadow:0 0 0 3px rgba(34,125,255,0.12)}
+  .cell:hover{transform:translateY(-2px)}
+  /* Checked visual: subtle tint and a checkmark pseudo-element */
+  .cell.checked{ /* tint applied inline via style attribute using data-mark-color */
+    color:#04263d;
+  }
+  .cell.checked::after{
+    content:"✓";
+    position:absolute;
+    top:6px; right:8px;
+    font-weight:700;
+    font-size:1rem;
+    color:rgba(2,6,23,0.6);
+  }
+
+  /* Legend */
+  .legend{padding:12px;border-radius:8px;border:1px solid var(--cell-border);background:linear-gradient(180deg,#fff,#fbfdff)}
+  .legend h3{margin:0 0 8px 0;font-size:0.95rem}
+  .legend-list{display:flex;flex-direction:column;gap:8px}
+  .legend-item{display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted)}
+  .swatch{width:28px;height:18px;border-radius:4px;border:1px solid rgba(0,0,0,0.06)}
+
+  /* Status */
+  .status{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+  .bingos{font-weight:700;color:#0b1220}
+  .aria-hidden-note{font-size:0.85rem;color:var(--muted)}
+
+  /* Responsive */
+  @media (max-width:880px){
+    .controls{grid-template-columns:1fr}
+    .board-and-legend{grid-template-columns:1fr}
+    .controls-right{grid-auto-flow:row}
+  }
+  @media (max-width:420px){
+    .grid{gap:8px}
+    .cell{font-size:0.85rem;padding:6px}
+  }
+
+  /* Print: hide controls and legend, print only board */
+  @media print{
+    body{background:white}
+    header,.controls,.legend,.status,footer{display:none !important}
+    .wrap{max-width:100%;margin:0;padding:0}
+    .card{box-shadow:none;border:0;padding:0}
+    .board{border:0;padding:0}
+    .cell{box-shadow:none;border:1px solid #000;color:#000;background:transparent}
+  }
+
+  /* Accessibility helpers */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="application" aria-labelledby="title">
+      <header>
+        <div>
+          <h1 id="title">Classroom Bingo — 5×5</h1>
+          <p class="lead">Paste up to 25 prompts (one per line). Click cells or press Space/Enter to toggle. Winning lines are outlined and counted.</p>
+        </div>
+      </header>
+
+      <!-- Builder UI -->
+      <section class="controls card" aria-label="Builder controls">
+        <div class="controls-left">
+          <label for="prompts">Prompts (one per line; max 25):</label>
+          <textarea id="prompts" aria-describedby="prompts-help" placeholder="Example: Has a pet dog
+Asked a question in class
+Used a green pen
+... (up to 25 lines)"></textarea>
+          <div class="control-row">
+            <div class="small muted" id="prompts-help">Lines over 25 will be ignored. Aim for 5–7 words per line for readability.</div>
+          </div>
+          <div class="control-row">
+            <label><input type="checkbox" id="free-center" checked> Free center (pre-checked)</label>
+            <div class="small muted">Center is index 12 in row-major 0–24 indexing (row 3, col 3).</div>
+          </div>
+        </div>
+
+        <div class="controls-right">
+          <div>
+            <label for="markColor">Mark tint</label>
+            <input id="markColor" type="color" value="#1e90ff" aria-label="Choose mark tint color">
+          </div>
+
+          <div style="display:flex;gap:8px;">
+            <button id="buildBtn" class="btn btn-primary" aria-controls="board" title="Build the bingo board">Build Board</button>
+            <button id="resetBtn" class="btn btn-ghost" title="Reset checks (keeps prompts)">Reset</button>
+          </div>
+
+          <div class="small muted" style="margin-top:6px">
+            Tips: use short prompts, print without controls using your browser's print.
+          </div>
+        </div>
+      </section>
+
+      <!-- Board and Legend -->
+      <section class="board-and-legend" aria-live="off">
+        <div class="board" id="board-region" aria-label="Bingo board region">
+          <div class="grid" id="board" role="grid" aria-label="Bingo grid"></div>
+        </div>
+
+        <aside class="legend" aria-labelledby="legend-heading">
+          <h3 id="legend-heading">Lines & Colors</h3>
+          <div class="legend-list" id="legend"></div>
+          <div class="status" style="margin-top:12px">
+            <div class="bingos" id="bingos">Bingos: 0</div>
+            <!-- Live region for polite updates so screen readers announce changes -->
+            <div id="live-region" aria-live="polite" class="sr-only">No bingos yet</div>
+          </div>
+        </aside>
+      </section>
+
+      <footer style="margin-top:12px" class="small muted">Accessibility notes: Buttons use role="checkbox" and aria-checked to reflect state. Keyboard users can toggle with Space/Enter. Center cell (index 12) is the free spot when chosen.</footer>
+    </div>
+  </div>
+
+<script>
+/*
+  Single-file Classroom Bingo
+  - 5x5 grid, row-major indices 0..24, center index = 12 (3rd row, 3rd column)
+  - Buttons act as checkboxes: role="checkbox", aria-checked updated
+  - Lines: 5 rows, 5 columns, 2 diagonals = 12 lines total (stable order)
+  - Fixed color palette used to assign a stable color to each line id
+  - When a line is a winning one (all 5 checked), each cell in that line receives an inset outline.
+    Outlines from multiple winning lines stack via multiple inset box-shadows on the same cell.
+  - Mark tint chosen by color input converted to rgba with alpha ~0.16 and stored on cell.dataset.markColor
+*/
+
+/* -------------------------
+   Configuration & globals
+   ------------------------- */
+const BOARD_SIZE = 5;
+const TOTAL_CELLS = BOARD_SIZE * BOARD_SIZE; // 25
+const CENTER_INDEX = 12; // row-major: row 2 (0-based) * 5 + col 2 = 12
+// Fixed palette for the 12 lines to keep colors stable across rebuilds.
+// Using visually distinct, pleasant hues. Order: rows 1-5, cols 1-5, diag TL-BR, diag TR-BL
+const LINE_COLORS = [
+  "#4f46e5","#06b6d4","#10b981","#f59e0b","#ef4444", // rows
+  "#7c3aed","#0ea5e9","#059669","#f97316","#b91c1c", // cols
+  "#0f766e","#6d28d9" // diagonals
+];
+
+// All 12 lines as arrays of indices. We keep stable order: rows 0..4, cols 0..4, diag TL-BR, diag TR-BL
+function allLines(){
+  const lines = [];
+  // Rows
+  for(let r=0;r<BOARD_SIZE;r++){
+    const row = [];
+    for(let c=0;c<BOARD_SIZE;c++) row.push(r*BOARD_SIZE + c);
+    lines.push({type:'row',index:r,indices:row});
+  }
+  // Columns
+  for(let c=0;c<BOARD_SIZE;c++){
+    const col=[];
+    for(let r=0;r<BOARD_SIZE;r++) col.push(r*BOARD_SIZE + c);
+    lines.push({type:'col',index:c,indices:col});
+  }
+  // Diagonal TL->BR: indices 0,6,12,18,24  (step 6)
+  lines.push({type:'diag','index':0,indices:[0,6,12,18,24],label:'Diag TL→BR'});
+  // Diagonal TR->BL: indices 4,8,12,16,20 (step 4)
+  lines.push({type:'diag','index':1,indices:[4,8,12,16,20],label:'Diag TR→BL'});
+  return lines;
+}
+
+/* Utility: convert hex to rgba string with given alpha.
+   The chosen alpha around 0.16 (approx) provides a subtle tint per requirement.
+*/
+function hexToRgba(hex,alpha=0.16){
+  const h = hex.replace('#','');
+  const bigint = parseInt(h.length===3 ? h.split('').map(x=>x+x).join('') : h,16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* DOM refs */
+const promptsEl = document.getElementById('prompts');
+const freeCenterEl = document.getElementById('free-center');
+const markColorEl = document.getElementById('markColor');
+const buildBtn = document.getElementById('buildBtn');
+const resetBtn = document.getElementById('resetBtn');
+const boardEl = document.getElementById('board');
+const legendEl = document.getElementById('legend');
+const bingosEl = document.getElementById('bingos');
+const liveRegion = document.getElementById('live-region');
+
+let currentCells = []; // NodeList/array of cell buttons
+let currentPrompts = []; // array of 25 prompt strings (empty string allowed)
+let activeLineIds = new Set(); // set of line ids currently winning (0..11)
+
+/* -------------------------
+   Build / Render functions
+   ------------------------- */
+
+/* buildBoard:
+   - parse prompts (max 25 lines)
+   - render 25 buttons with role="checkbox", aria-checked, data-index
+   - set dataset.markColor (rgba) for checked background use
+*/
+function buildBoard(){
+  // Parse prompts
+  const lines = promptsEl.value.split(/\r?\n/).map(s=>s.trim()).filter((_,i)=>i<25);
+  // Fill to 25 with empty strings
+  currentPrompts = Array.from({length:TOTAL_CELLS}, (_,i) => lines[i] || '');
+  // Compute tint rgba and persist in a dataset property on the container (and on each cell later)
+  const tintHex = markColorEl.value || '#1e90ff';
+  const tintRgba = hexToRgba(tintHex,0.16);
+
+  // Clear board
+  boardEl.innerHTML = '';
+  currentCells = [];
+
+  // Render cells row-major 0..24
+  for(let i=0;i<TOTAL_CELLS;i++){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cell';
+    btn.setAttribute('role','checkbox'); // ARIA: present as checkbox
+    btn.setAttribute('aria-checked','false');
+    btn.setAttribute('aria-label', currentPrompts[i] ? currentPrompts[i] : `Empty square ${i+1}`);
+    btn.dataset.index = i;
+    // Persist mark color per requirement in dataset.markColor as rgba string
+    btn.dataset.markColor = tintRgba;
+    // Put text content; small prompts should wrap
+    const span = document.createElement('span');
+    span.textContent = currentPrompts[i] || '';
+    span.style.pointerEvents = 'none';
+    btn.appendChild(span);
+
+    // If free center and this is center index, pre-check
+    if(freeCenterEl.checked && i === CENTER_INDEX){
+      setChecked(btn,true,false); // false -> don't announce update yet
+    }
+
+    // Event handlers: click and keyboard
+    btn.addEventListener('click', ()=>{ toggleCell(btn); });
+    btn.addEventListener('keydown', (ev)=>{
+      // Ensure Space and Enter toggle. Using keydown to prevent scrolling when Space.
+      if(ev.code === 'Space' || ev.key === ' '){
+        ev.preventDefault();
+        toggleCell(btn);
+      } else if(ev.key === 'Enter'){
+        ev.preventDefault();
+        toggleCell(btn);
+      }
+    });
+
+    boardEl.appendChild(btn);
+    currentCells.push(btn);
+  }
+
+  updateWins(); // compute any wins from free center or initial state
+  renderLegend();
+}
+
+/* setChecked: sets checked state for a button element.
+   - updates aria-checked and visual class
+   - uses dataset.markColor to set background tint when checked
+   - when announce=true, call updateWins which will refresh live region.
+*/
+function setChecked(btn,checked,announce=true){
+  btn.setAttribute('aria-checked', String(Boolean(checked)));
+  if(checked){
+    btn.classList.add('checked');
+    // Use markColor to set subtle background via inline style for accessibility/per-spec
+    btn.style.background = `linear-gradient(180deg, ${btn.dataset.markColor}, rgba(255,255,255,0.02))`;
+  } else {
+    btn.classList.remove('checked');
+    btn.style.background = '';
+    btn.style.boxShadow = ''; // clear outlines if any - updateWins will reapply as needed
+  }
+  if(announce) updateWins();
+}
+
+/* toggleCell wrapper */
+function toggleCell(btn){
+  const currently = btn.getAttribute('aria-checked') === 'true';
+  setChecked(btn, !currently, true);
+}
+
+/* getCheckedMatrix: returns boolean array of length 25 representing checked state */
+function getCheckedMatrix(){
+  return currentCells.map(c => c.getAttribute('aria-checked') === 'true');
+}
+
+/* updateWins:
+   - Evaluate all 12 lines for full-checked
+   - For each winning line, add its id to activeLineIds
+   - Build per-cell box-shadow strings to stack outlines from multiple winning lines
+   - Update legend and live region with count
+   - Outline stacking: we produce multiple inset box-shadow entries; earlier line ids appear earlier in list,
+     but to keep visual consistency we use a small spread and thickness per layer.
+*/
+function updateWins(){
+  const lines = allLines();
+  const checked = getCheckedMatrix();
+  activeLineIds.clear();
+
+  // Detect winning lines
+  lines.forEach((ln, idx)=>{
+    const allChecked = ln.indices.every(i => checked[i]);
+    if(allChecked) activeLineIds.add(idx);
+  });
+
+  // For each cell compute stacked inset box-shadow for winning lines that include it
+  // We'll create a subtle inner outline for each winning line.
+  const outlineThickness = 3; // px
+  const outlineGap = 2; // spacing between stacked outlines
+  const maxLayers = Math.max(1, activeLineIds.size);
+  // Precompute color rgba with slightly stronger alpha for outlines
+  const colors = LINE_COLORS.map(h => {
+    // convert hex to rgba with alpha 0.85 for outline visibility
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h.length===4 ? h.split('').slice(1).map(x=>x+x).join('') : h.slice(1));
+    if(!m) return h;
+    const r=parseInt(m[1],16), g=parseInt(m[2],16), b=parseInt(m[3],16);
+    return `rgba(${r},${g},${b},0.9)`;
+  });
+
+  // Build map of which lines include which cells
+  const linesArray = lines; // stable order
+  // For each cell
+  currentCells.forEach((cell, i)=>{
+    const cellLineIndices = [];
+    linesArray.forEach((ln, li) => {
+      if(activeLineIds.has(li) && ln.indices.includes(i)) cellLineIndices.push(li);
+    });
+    // Compose multiple inset box-shadows
+    const shadows = [];
+    // We stack them so the first winning line gets innermost outline, subsequent ones grow outward
+    cellLineIndices.forEach((li, layerIdx) => {
+      const offset = layerIdx * (outlineThickness + outlineGap);
+      // Using 'inset 0 0 0 {thickness}px color' creates an inner border
+      shadows.push(`inset 0 0 0 ${outlineThickness + offset}px ${colors[li]}`);
+    });
+    // Combine with any existing boxShadow (e.g., focus/hover) - we only set our computed shadows
+    cell.style.boxShadow = shadows.join(', ');
+  });
+
+  // Update legend visuals and bingos count
+  renderLegend();
+  const bingoCount = activeLineIds.size;
+  bingosEl.textContent = `Bingos: ${bingoCount}`;
+  liveRegion.textContent = bingoCount === 0 ? 'No bingos yet' : `${bingoCount} bingo${bingoCount>1?'s':''}`;
+}
+
+/* renderLegend:
+   - lists each of the 12 lines with its stable color swatch and label
+   - indicates active lines visually (bold)
+*/
+function renderLegend(){
+  const lines = allLines();
+  legendEl.innerHTML = '';
+  lines.forEach((ln, idx) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = LINE_COLORS[idx];
+    sw.setAttribute('aria-hidden','true');
+
+    const lbl = document.createElement('div');
+    lbl.style.flex='1';
+    lbl.style.display='flex';
+    lbl.style.justifyContent='space-between';
+    lbl.style.alignItems='center';
+
+    const nameSpan = document.createElement('span');
+    // Label names: Row 1..5, Col 1..5, Diag TL→BR, Diag TR→BL
+    let name;
+    if(ln.type === 'row') name = `Row ${ln.index+1}`;
+    else if(ln.type === 'col') name = `Col ${ln.index+1}`;
+    else if(ln.type === 'diag'){
+      name = ln.label || (ln.index===0 ? 'Diag TL→BR' : 'Diag TR→BL');
+    }
+    nameSpan.textContent = name;
+
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'small muted';
+    statusSpan.textContent = activeLineIds.has(idx) ? 'WIN' : '';
+
+    if(activeLineIds.has(idx)){
+      nameSpan.style.fontWeight = '700';
+      nameSpan.style.color = '#0b1220';
+    }
+
+    lbl.appendChild(nameSpan);
+    lbl.appendChild(statusSpan);
+    item.appendChild(sw);
+    item.appendChild(lbl);
+    legendEl.appendChild(item);
+  });
+}
+
+/* resetChecks:
+   - unchecks every cell (keeps prompts/markColor)
+   - if free center is selected, re-check center
+*/
+function resetChecks(){
+  currentCells.forEach(btn => setChecked(btn,false,false));
+  if(freeCenterEl.checked && currentCells[CENTER_INDEX]) setChecked(currentCells[CENTER_INDEX], true, false);
+  updateWins();
+}
+
+/* -------------------------
+   Event wiring
+   ------------------------- */
+buildBtn.addEventListener('click', ()=>{
+  // Validate prompts length; allow fewer than 25
+  const lines = promptsEl.value.split(/\r?\n/).map(s=>s.trim()).filter((_,i)=>i<25);
+  // Optional user feedback: warn if >25 lines trimmed — but minimal UI requirement; we'll console.warn
+  if(promptsEl.value.split(/\r?\n/).length > 25){
+    console.warn('More than 25 lines provided. Extra lines will be ignored.');
+  }
+  buildBoard();
+});
+
+resetBtn.addEventListener('click', ()=>{
+  resetChecks();
+});
+
+/* Keyboard shortcut: press 'B' to rebuild (convenience) */
+document.addEventListener('keydown', (e)=>{
+  if((e.key === 'b' || e.key === 'B') && (e.ctrlKey || e.metaKey)){
+    e.preventDefault();
+    buildBoard();
+  }
+});
+
+/* Build initial sample board for quick start */
+(function initialDemo(){
+  const sample = [
+ 'Shared screen successfully',
+'Typed in the chat',
+'Used the raise hand button',
+'Smiled on camera',
+'Nodded in agreement',
+'Turned camera off',
+'Arrived early to class',
+'Stayed attentive',
+'Wore headphones',
+'Said “Can you repeat that?”',
+'Typed Thanks to AI',
+'Lost connection briefly',
+'Used a virtual background',
+'Giggled at joke',
+'Took notes diligently',
+'Asked for clarification',
+'Said “You\'re on mute”',
+'Participated in breakout room',
+'Followed instructions promptly',
+'Drinking Coffee',
+'Asked a question',
+'Answered a poll',
+'Sent a smiley face',
+'Forgot to unmute',
+'Gave a thumbs up'
+  ];
+  // actually set proper newlines
+  promptsEl.value = sample.slice(0,25).join('\n');
+  buildBoard();
+})();
+
+/* Accessibility comments:
+   - We use <button> but set role="checkbox" so assistive tech announces checkbox semantics.
+     Keeping it a button preserves native keyboard activation (Enter/Space).
+   - aria-checked is kept in sync with visual checked state for accurate programmatic state.
+   - The live region (aria-live="polite") reports changes to the bingo count so screen readers notice wins.
+   - CENTER_INDEX variable documents the center at index 12 (row-major). This is used to pre-check the free spot.
+*/
+
+/* End of script */
+</script>
+</body>
+</html>

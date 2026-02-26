@@ -5,10 +5,14 @@ A simple and accessible web-based Bingo game designed for classroom or virtual l
 ## 🎯 Features
 
 - Build a 5×5 Bingo board using custom prompts
+- Optional prompt shuffling when building a new card
 - Optional "Free Center" square support
 - Visual and keyboard-friendly interactions
+- Arrow-key movement between board cells
 - Tracks and highlights multiple simultaneous Bingo wins
 - Color-coded win legend
+- Progress display (`Checked: x/25`) and new-bingo announcements
+- Persists board state, settings, and checks in local storage
 - Responsive layout for small screens
 - Supports screen readers and keyboard navigation
 

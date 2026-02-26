@@ -91,7 +91,15 @@
   /* Status */
   .status{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
   .bingos{font-weight:700;color:#0b1220}
+  .progress{font-weight:600;color:#334155;font-size:0.9rem}
   .aria-hidden-note{font-size:0.85rem;color:var(--muted)}
+  .announcement{
+    margin-top:10px;
+    min-height:1.2rem;
+    font-size:0.9rem;
+    font-weight:700;
+    color:#065f46;
+  }
 
   /* Responsive */
   @media (max-width:880px){
@@ -150,6 +158,9 @@ Used a green pen
             <label for="markColor">Mark tint</label>
             <input id="markColor" type="color" value="#1e90ff" aria-label="Choose mark tint color">
           </div>
+          <div style="justify-content:flex-start">
+            <label><input type="checkbox" id="shuffle-prompts"> Shuffle prompts on build</label>
+          </div>
 
           <div style="display:flex;gap:8px;">
             <button id="buildBtn" class="btn btn-primary" aria-controls="board" title="Build the bingo board">Build Board</button>
@@ -173,13 +184,15 @@ Used a green pen
           <div class="legend-list" id="legend"></div>
           <div class="status" style="margin-top:12px">
             <div class="bingos" id="bingos">Bingos: 0</div>
+            <div class="progress" id="progress">Checked: 0/25</div>
             <!-- Live region for polite updates so screen readers announce changes -->
             <div id="live-region" aria-live="polite" class="sr-only">No bingos yet</div>
           </div>
+          <div class="announcement" id="announcement" aria-hidden="true"></div>
         </aside>
       </section>
 
-      <footer style="margin-top:12px" class="small muted">Accessibility notes: Buttons use role="checkbox" and aria-checked to reflect state. Keyboard users can toggle with Space/Enter. Center cell (index 12) is the free spot when chosen.</footer>
+      <footer style="margin-top:12px" class="small muted">Accessibility notes: Buttons use role="checkbox" and aria-checked to reflect state. Keyboard users can toggle with Space/Enter and move with Arrow keys. Center cell (index 12) is the free spot when chosen.</footer>
     </div>
   </div>
 
@@ -247,16 +260,21 @@ function hexToRgba(hex,alpha=0.16){
 const promptsEl = document.getElementById('prompts');
 const freeCenterEl = document.getElementById('free-center');
 const markColorEl = document.getElementById('markColor');
+const shufflePromptsEl = document.getElementById('shuffle-prompts');
 const buildBtn = document.getElementById('buildBtn');
 const resetBtn = document.getElementById('resetBtn');
 const boardEl = document.getElementById('board');
 const legendEl = document.getElementById('legend');
 const bingosEl = document.getElementById('bingos');
+const progressEl = document.getElementById('progress');
+const announcementEl = document.getElementById('announcement');
 const liveRegion = document.getElementById('live-region');
 
+const STORAGE_KEY = 'classroom-bingo-state-v2';
 let currentCells = []; // NodeList/array of cell buttons
 let currentPrompts = []; // array of 25 prompt strings (empty string allowed)
 let activeLineIds = new Set(); // set of line ids currently winning (0..11)
+let previousBingoCount = 0;
 
 /* -------------------------
    Build / Render functions
@@ -267,11 +285,54 @@ let activeLineIds = new Set(); // set of line ids currently winning (0..11)
    - render 25 buttons with role="checkbox", aria-checked, data-index
    - set dataset.markColor (rgba) for checked background use
 */
-function buildBoard(){
-  // Parse prompts
-  const lines = promptsEl.value.split(/\r?\n/).map(s=>s.trim()).filter((_,i)=>i<25);
-  // Fill to 25 with empty strings
-  currentPrompts = Array.from({length:TOTAL_CELLS}, (_,i) => lines[i] || '');
+function shuffleArray(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+
+function parsePromptLines(){
+  const rawLines = promptsEl.value.split(/\r?\n/);
+  const trimmed = rawLines.map(s=>s.trim()).filter(Boolean);
+  const kept = trimmed.slice(0,TOTAL_CELLS);
+  return shufflePromptsEl.checked ? shuffleArray(kept) : kept;
+}
+
+function getCheckedState(){
+  return currentCells.map(c => c.getAttribute('aria-checked') === 'true');
+}
+
+function saveState(){
+  try{
+    const payload = {
+      promptsText: promptsEl.value,
+      boardPrompts: currentPrompts,
+      freeCenter: freeCenterEl.checked,
+      markColor: markColorEl.value,
+      shufflePrompts: shufflePromptsEl.checked,
+      checkedState: getCheckedState()
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }catch(err){
+    console.warn('Unable to save bingo state:', err);
+  }
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(err){
+    console.warn('Unable to load bingo state:', err);
+    return null;
+  }
+}
+
+function renderBoard(prompts, checkedState = null){
+  currentPrompts = Array.from({length:TOTAL_CELLS}, (_,i) => prompts[i] || '');
   // Compute tint rgba and persist in a dataset property on the container (and on each cell later)
   const tintHex = markColorEl.value || '#1e90ff';
   const tintRgba = hexToRgba(tintHex,0.16);
@@ -297,8 +358,10 @@ function buildBoard(){
     span.style.pointerEvents = 'none';
     btn.appendChild(span);
 
-    // If free center and this is center index, pre-check
-    if(freeCenterEl.checked && i === CENTER_INDEX){
+    // If explicit checked state exists, prefer it; otherwise apply free center behavior.
+    if(Array.isArray(checkedState) && checkedState.length === TOTAL_CELLS){
+      setChecked(btn, Boolean(checkedState[i]), false);
+    } else if(freeCenterEl.checked && i === CENTER_INDEX){
       setChecked(btn,true,false); // false -> don't announce update yet
     }
 
@@ -312,6 +375,17 @@ function buildBoard(){
       } else if(ev.key === 'Enter'){
         ev.preventDefault();
         toggleCell(btn);
+      } else if(ev.key.startsWith('Arrow')){
+        ev.preventDefault();
+        const idx = Number(btn.dataset.index);
+        const row = Math.floor(idx / BOARD_SIZE);
+        const col = idx % BOARD_SIZE;
+        let next = idx;
+        if(ev.key === 'ArrowRight') next = row*BOARD_SIZE + ((col+1)%BOARD_SIZE);
+        if(ev.key === 'ArrowLeft') next = row*BOARD_SIZE + ((col-1+BOARD_SIZE)%BOARD_SIZE);
+        if(ev.key === 'ArrowDown') next = ((row+1)%BOARD_SIZE)*BOARD_SIZE + col;
+        if(ev.key === 'ArrowUp') next = ((row-1+BOARD_SIZE)%BOARD_SIZE)*BOARD_SIZE + col;
+        currentCells[next]?.focus();
       }
     });
 
@@ -321,6 +395,22 @@ function buildBoard(){
 
   updateWins(); // compute any wins from free center or initial state
   renderLegend();
+}
+
+function buildBoard(opts = {}){
+  const prompts = Array.isArray(opts.forcedPrompts) ? opts.forcedPrompts : parsePromptLines();
+  renderBoard(prompts, opts.checkedState || null);
+  saveState();
+}
+
+function applyTintToCheckedCells(){
+  const tintRgba = hexToRgba(markColorEl.value || '#1e90ff',0.16);
+  currentCells.forEach((btn) => {
+    btn.dataset.markColor = tintRgba;
+    if(btn.getAttribute('aria-checked') === 'true'){
+      btn.style.background = `linear-gradient(180deg, ${btn.dataset.markColor}, rgba(255,255,255,0.02))`;
+    }
+  });
 }
 
 /* setChecked: sets checked state for a button element.
@@ -350,7 +440,7 @@ function toggleCell(btn){
 
 /* getCheckedMatrix: returns boolean array of length 25 representing checked state */
 function getCheckedMatrix(){
-  return currentCells.map(c => c.getAttribute('aria-checked') === 'true');
+  return getCheckedState();
 }
 
 /* updateWins:
@@ -376,7 +466,6 @@ function updateWins(){
   // We'll create a subtle inner outline for each winning line.
   const outlineThickness = 3; // px
   const outlineGap = 2; // spacing between stacked outlines
-  const maxLayers = Math.max(1, activeLineIds.size);
   // Precompute color rgba with slightly stronger alpha for outlines
   const colors = LINE_COLORS.map(h => {
     // convert hex to rgba with alpha 0.85 for outline visibility
@@ -409,8 +498,19 @@ function updateWins(){
   // Update legend visuals and bingos count
   renderLegend();
   const bingoCount = activeLineIds.size;
+  const checkedCount = checked.filter(Boolean).length;
   bingosEl.textContent = `Bingos: ${bingoCount}`;
+  progressEl.textContent = `Checked: ${checkedCount}/${TOTAL_CELLS}`;
+
+  if(bingoCount > previousBingoCount){
+    announcementEl.textContent = `New bingo${bingoCount > previousBingoCount + 1 ? 's' : ''}!`;
+  } else if(bingoCount === 0){
+    announcementEl.textContent = '';
+  }
+
   liveRegion.textContent = bingoCount === 0 ? 'No bingos yet' : `${bingoCount} bingo${bingoCount>1?'s':''}`;
+  previousBingoCount = bingoCount;
+  saveState();
 }
 
 /* renderLegend:
@@ -468,6 +568,8 @@ function renderLegend(){
 function resetChecks(){
   currentCells.forEach(btn => setChecked(btn,false,false));
   if(freeCenterEl.checked && currentCells[CENTER_INDEX]) setChecked(currentCells[CENTER_INDEX], true, false);
+  previousBingoCount = 0;
+  announcementEl.textContent = '';
   updateWins();
 }
 
@@ -475,18 +577,33 @@ function resetChecks(){
    Event wiring
    ------------------------- */
 buildBtn.addEventListener('click', ()=>{
-  // Validate prompts length; allow fewer than 25
-  const lines = promptsEl.value.split(/\r?\n/).map(s=>s.trim()).filter((_,i)=>i<25);
-  // Optional user feedback: warn if >25 lines trimmed — but minimal UI requirement; we'll console.warn
-  if(promptsEl.value.split(/\r?\n/).length > 25){
+  if(promptsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).length > 25){
     console.warn('More than 25 lines provided. Extra lines will be ignored.');
   }
+  previousBingoCount = 0;
+  announcementEl.textContent = '';
   buildBoard();
 });
 
 resetBtn.addEventListener('click', ()=>{
   resetChecks();
 });
+
+markColorEl.addEventListener('input', ()=>{
+  applyTintToCheckedCells();
+  saveState();
+});
+
+freeCenterEl.addEventListener('change', ()=>{
+  if(!currentCells.length) return;
+  if(freeCenterEl.checked && currentCells[CENTER_INDEX].getAttribute('aria-checked') !== 'true'){
+    setChecked(currentCells[CENTER_INDEX], true, false);
+    updateWins();
+  }
+  saveState();
+});
+
+shufflePromptsEl.addEventListener('change', saveState);
 
 /* Keyboard shortcut: press 'B' to rebuild (convenience) */
 document.addEventListener('keydown', (e)=>{
@@ -498,6 +615,20 @@ document.addEventListener('keydown', (e)=>{
 
 /* Build initial sample board for quick start */
 (function initialDemo(){
+  const saved = loadState();
+  if(saved){
+    promptsEl.value = saved.promptsText || '';
+    freeCenterEl.checked = Boolean(saved.freeCenter);
+    markColorEl.value = saved.markColor || '#1e90ff';
+    shufflePromptsEl.checked = Boolean(saved.shufflePrompts);
+    const promptsFromState = Array.isArray(saved.boardPrompts) ? saved.boardPrompts : null;
+    const checksFromState = Array.isArray(saved.checkedState) ? saved.checkedState : null;
+    if(promptsFromState && promptsFromState.length){
+      buildBoard({forcedPrompts: promptsFromState, checkedState: checksFromState});
+      return;
+    }
+  }
+
   const sample = [
  'Shared screen successfully',
 'Typed in the chat',

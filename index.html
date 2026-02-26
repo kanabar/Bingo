@@ -10,7 +10,9 @@
     --card:#ffffff;
     --muted:#6b6f75;
     --accent:#1e90ff;
-    --cell-border:#dfe3e6;
+    --cell-border:#b8c0cc;
+    --cell-bg:#ffffff;
+    --cell-bg-alt:#f8fafc;
     --max-width:1100px;
     --gap:12px;
     --board-gap:8px;
@@ -44,20 +46,26 @@
 
   /* Board + legend area */
   .board-and-legend{display:grid;grid-template-columns:1fr 240px;gap:12px;margin-top:14px}
-  .board{background:var(--card);padding:12px;border-radius:10px;border:1px solid var(--cell-border)}
+  .board{
+    background:linear-gradient(180deg,#ffffff,#f4f7fb);
+    padding:12px;
+    border-radius:10px;
+    border:1px solid var(--cell-border);
+  }
   .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--board-gap);width:100%}
   /* Cells are buttons acting as checkboxes for ARIA reasons */
   .cell{
     position:relative;
     aspect-ratio:1/1;
+    min-height:92px;
     display:flex;
     align-items:center;
     justify-content:center;
     text-align:center;
     padding:8px;
     border-radius:8px;
-    border:1px solid var(--cell-border);
-    background:linear-gradient(180deg,white,#fcfeff);
+    border:2px solid var(--cell-border);
+    background:linear-gradient(180deg,var(--cell-bg),var(--cell-bg-alt));
     font-size:0.93rem;
     line-height:1.08;
     color:#0f1724;
@@ -68,6 +76,8 @@
   }
   .cell:focus{box-shadow:0 0 0 3px rgba(34,125,255,0.12)}
   .cell:hover{transform:translateY(-2px)}
+  .cell:nth-child(odd){background:linear-gradient(180deg,#ffffff,#f3f6fb)}
+  .cell:nth-child(even){background:linear-gradient(180deg,#fbfdff,#f1f5f9)}
   /* Checked visual: subtle tint and a checkmark pseudo-element */
   .cell.checked{ /* tint applied inline via style attribute using data-mark-color */
     color:#04263d;
@@ -109,7 +119,7 @@
   }
   @media (max-width:420px){
     .grid{gap:8px}
-    .cell{font-size:0.85rem;padding:6px}
+    .cell{font-size:0.85rem;padding:6px;min-height:64px}
   }
 
   /* Print: hide controls and legend, print only board */
